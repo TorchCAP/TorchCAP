@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torchcap"
+version = "0.0.1"
+authors = [
+  { name="Man-Kit Sit", email="mankit.sit@ed.ac.uk" },
+]
+description = "TorchCAP"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = { text = "MIT" }
+
+[project.urls]
+Homepage = "https://github.com/TorchCAP/TorchCAP"
+Issues = "https://github.com/TorchCAP/TorchCAP/issues"

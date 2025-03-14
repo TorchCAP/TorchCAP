@@ -1,0 +1,25 @@
+# Python cache
+__pycache__
+*.pyc
+dist
+*.egg-info
+.cache
+*env
+
+# vscode
+*vscode*
+
+# macOS temp files
+.DS_Store
+
+# Analysis temp files
+*.nvprof
+*.prof
+*.tsv
+*.pkl
+*.log
+logs/
+trace
+
+# C++ extensions
+*.so
