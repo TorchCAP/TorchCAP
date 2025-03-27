@@ -16,7 +16,7 @@ from torchcap.cost_model.comm_model import is_collective, estimate_nccl_collecti
 from torchcap.cost_model.flop_counter import FlopCounterMode
 from torchcap.cost_model.memory_estimator import MemoryEstimator, MemType
 from torchcap.fx_utils import materialize_arg, dtypes_of, size_of
-from torchcap.common import torchcapOptions
+from torchcap.common import CAPConfig
 from torchcap.cost_model.runtime_estimator import RuntimeEstimator
 from torchcap.cost_model import comm_model, memory
 
@@ -269,7 +269,7 @@ def estimate_runtime_using_benchmarking(node: fx.Node) -> tuple[Any, float]:  # 
     return mean_op_time
 
 
-def estimate_runtime_using_roofline(node: fx.Node, options: torchcapOptions) -> float:
+def estimate_runtime_using_roofline(node: fx.Node, options: CAPConfig) -> float:
     # Estimate the FLOPs and compute time
     args, kwargs = pytree.tree_map(materialize_arg, (node.args, node.kwargs))
     with FlopCounterMode(display=False) as mode:
@@ -312,7 +312,7 @@ def group_name_to_mesh_dim(group_name: str, device_mesh: DeviceMesh) -> int:
     raise ValueError(f"Group name {group_name} not found in device mesh")
 
 
-def estimate_collective_runtime(node: fx.Node, config: torchcapOptions) -> float:
+def estimate_collective_runtime(node: fx.Node, config: CAPConfig) -> float:
     assert is_collective(node)
 
     if comm_model.is_wait(node):
@@ -321,7 +321,7 @@ def estimate_collective_runtime(node: fx.Node, config: torchcapOptions) -> float
     mesh_topo = config.cluster_env.mesh_topo
     op_bytes = comm_model.get_collective_input_size_bytes(node)
     # print(f"[DEBUG] collective: {node.name}, args={node.args}, kwargs={node.kwargs} mesh_dim_names={config.device_mesh._dim_group_infos}")
-    mesh_dim = group_name_to_mesh_dim(node.args[-1], config.device_mesh)
+    mesh_dim = group_name_to_mesh_dim(node.args[-1], config.cluster_env.mesh_topo.get_device_mesh())
 
     kernel_name = node.target.__name__
     if "all_reduce" in kernel_name:
@@ -336,10 +336,10 @@ def estimate_collective_runtime(node: fx.Node, config: torchcapOptions) -> float
         t = comm_model.broadcast_cost(op_bytes, mesh_topo, mesh_dim)
     else:
         raise ValueError(f"Unsupported collective kernel: {kernel_name}")
-    return t * 1e6 # s -> us
+    return t
 
 
-def estimate_runtime(node: fx.Node, config: torchcapOptions) -> float:
+def estimate_runtime(node: fx.Node, config: CAPConfig) -> float:
     if node.op != "call_function" or node.target in _IGNORE_OPS:
         return 0
 
@@ -377,7 +377,7 @@ def estimate_memory_using_estimator(program: torch.export.ExportedProgram) -> fl
     return estimator.memory_use, estimator.max_memory
 
 
-def estimate_graph_cost(mod: torch.nn.Module, gm: torch.fx.GraphModule, config: torchcapOptions) -> GraphInfo:
+def estimate_graph_cost(mod: torch.nn.Module, gm: torch.fx.GraphModule, config: CAPConfig) -> GraphInfo:
     all_nodes = [node.name for node in gm.graph.nodes]
     all_edges = [
         (node.name, user.name) for node in gm.graph.nodes for user in node.users

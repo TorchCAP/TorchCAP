@@ -1,5 +1,3 @@
-# Adapted from https://github.com/pytorch/pytorch/blob/main/torch/distributed/tensor/experimental/_tp_transform.py
-
 # mypy: allow-untyped-defs
 import copy
 import operator
@@ -17,7 +15,6 @@ from torch.distributed.tensor._op_schema import (
     PlacementStrategy,
 )
 from torch.distributed.tensor._redistribute import redistribute_local_tensor
-from torch.distributed.tensor.parallel.style import ColwiseParallel, ParallelStyle
 from torch.distributed.tensor.placement_types import Placement, Replicate, Shard
 from torch.export import ExportedProgram
 from torch.export.exported_program import ExportGraphSignature
@@ -27,25 +24,19 @@ from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 from torch.utils import _pytree as pytree
+from torch.distributed.tensor.parallel.style import ColwiseParallel, ParallelStyle
+
+from torchcap.cluster_env import MeshTopology
+from torchcap.passes.utils import ParallelPlan
 
 
 __all__ = ["tensor_parallel_transformation"]
 
-aten = torch.ops.aten
 
-
-class ShardingPlan:
-    def __init__(self, mesh: DeviceMesh, placements: dict[str, Placement] = {}):
-        self.mesh = mesh
-        self.placements = placements
-
-    def __repr__(self):
-        return f"ShardingPlan(placements={str(self.placements)})"
-
-
-def manual_sharding(
-    exported_program: ExportedProgram,
-    sharding_plan: ShardingPlan,
+def tensor_parallel_transformation(
+    program: ExportedProgram,
+    mesh_topo: MeshTopology,
+    parallel_plan: ParallelPlan,
 ) -> ExportedProgram:
     """
     The entry point function to perform graph transformations on an exported program
@@ -55,25 +46,24 @@ def manual_sharding(
         This API is experimental and subject to change.
     """
 
-    gm = exported_program.graph_module
-    sig = copy.deepcopy(exported_program.graph_signature)
-    state_dict = copy.copy(exported_program.state_dict)
-
-    # print(f"manual_sharding {sharding_plan=}")
+    gm = program.graph_module
+    sig = copy.deepcopy(program.graph_signature)
+    state_dict = copy.copy(program.state_dict)
 
     with gm._set_replace_hook(sig.get_replace_hook()):
-        res = _ShardingPass(
+        res = _TensorParallelTransformPass(
+            mesh_topo,
             state_dict,
-            exported_program.graph_signature,
-            sharding_plan,
+            program.graph_signature,
+            parallel_plan,
         )(gm)
         assert res is not None
         gm = res.graph_module
 
-    return exported_program._update(gm, sig, state_dict=state_dict)
+    return program._update(gm, sig, state_dict=state_dict)
 
 
-class _ShardingPass(PassBase):
+class _TensorParallelTransformPass(PassBase):
     """
     This pass is responsible for transforming a single-device graph into a tensor parallel
     graph. It will mark the placement strategy of each node in the graph,
@@ -82,23 +72,24 @@ class _ShardingPass(PassBase):
 
     def __init__(
         self,
+        mesh_topo: MeshTopology,
         state_dict: dict[str, torch.Tensor],
         graph_signature: ExportGraphSignature,
-        sharding_plan: ShardingPlan,
+        parallel_plan: ParallelPlan,
     ) -> None:
         super().__init__()
-        self.mesh = sharding_plan.mesh
+        # self.mesh = DeviceMesh(mesh_topo.device_type, torch.arange(mesh_topo.world_size))
+        self.mesh = mesh_topo.get_device_mesh()
         self.state_dict: dict[str, torch.Tensor] = state_dict
         self.graph_signature = graph_signature
-        self.sharding_plan = sharding_plan
+        self.parallel_plan = parallel_plan
 
     def call(self, graph_module) -> PassResult:
         gm = copy.deepcopy(graph_module)
 
-        # parameter_placements = _generate_parameter_and_buffer_placements(
-        #     list(self.state_dict.keys()), self.parallel_strategies
-        # )
-        parameter_placements = self.sharding_plan.placements
+        parameter_placements = _extract_parameter_and_buffer_placements(
+            self.graph_signature, self.parallel_plan.node_strategies
+        )
         placement_strategies = _mark_sharding(
             gm, self.graph_signature, self.mesh, parameter_placements
         )
@@ -107,6 +98,20 @@ class _ShardingPass(PassBase):
             self.state_dict, placement_strategies, self.graph_signature, self.mesh
         )
         return PassResult(gm, True)
+
+
+def _extract_parameter_and_buffer_placements(
+    graph_signature: ExportGraphSignature,
+    node_strategies: dict[str, PlacementStrategy],
+) -> dict[str, Placement]:
+    """
+    Build parameter placements based on the give parallel style of linear layers.
+    """
+    parameter_placements: dict[str, Placement] = {}
+    for node_name, param_name in graph_signature.inputs_to_parameters.items():
+        if node_name in node_strategies:
+            parameter_placements[param_name] = node_strategies[node_name].output_spec.placements[0]
+    return parameter_placements
 
 
 def _generate_parameter_and_buffer_placements(
@@ -129,6 +134,7 @@ def _generate_parameter_and_buffer_placements(
                 Shard(0) if parallel_style == ColwiseParallel else Replicate()
             )
     return parameter_placements
+
 
 
 def _mark_tensor_parallel_shardings(

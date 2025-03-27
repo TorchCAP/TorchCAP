@@ -1,1 +1,1 @@
-from .solver import solve_auto_sharding
+from .parallel_solver import solve_auto_sharding

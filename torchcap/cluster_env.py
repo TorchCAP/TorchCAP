@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import Optional, Any
 import gc
 import warnings
 import numpy as np
+from numpy.typing import NDArray, ArrayLike
 import matplotlib.pyplot as plt
 import torch.cuda.profiler as profiler
-from numpy.typing import NDArray
 import math
 import time
 from collections import defaultdict
@@ -175,6 +175,20 @@ class AlphaBetaModel:
             print(f"Saved plot to {file_name}")
 
 
+def get_shape(x: Any) -> tuple[int, ...]:
+    if isinstance(x, torch.Tensor):
+        return tuple(x.shape)
+    elif isinstance(x, np.ndarray):
+        return x.shape
+    elif isinstance(x, (list, tuple)):  # Assuming it's a nested list or tuple
+        try:
+            return np.shape(x)
+        except:
+            return (len(x),)
+    else:
+        raise TypeError("Unsupported type. Must be torch.Tensor, np.ndarray, or a nested list/tuple.")
+
+
 class MeshTopology:
     def __init__(
         self,
@@ -184,19 +198,37 @@ class MeshTopology:
         comm_model: dict[int, AlphaBetaModel],
     ):
         self.device_type = device_type
-        self.mesh_shape = mesh_shape
+        self.logical_mesh_shape = mesh_shape
+        self.physical_mesh_shape: Optional[tuple[int, ...]] = None
         self.mesh_dim_names = mesh_dim_names
         self.comm_model: dict[int, AlphaBetaModel] = comm_model
         self.device_mesh: Optional[DeviceMesh] = None
 
     def __str__(self):
-        return f"MeshTopology(device_type={self.device_type}, mesh_shape={self.mesh_shape}, mesh_dim_names={self.mesh_dim_names}, comm_model={self.comm_model})"
+        return (
+            "MeshTopology(\n"
+            f"    device_type={self.device_type},\n"
+            f"    logical_mesh_shape={self.logical_mesh_shape},\n"
+            f"    physical_mesh_shape={self.physical_mesh_shape},\n"
+            f"    mesh_dim_names={self.mesh_dim_names},\n"
+            f"    comm_model={self.comm_model}\n"
+            ")"
+        )
 
     def __repr__(self):
         return self.__str__()
 
-    def build_device_mesh(self, mesh: list[int]):
-        self.device_mesh = DeviceMesh(self.device_type, mesh, mesh_dim_names=self.mesh_dim_names)
+    def materialize(self, physical_mesh: ArrayLike | torch.Tensor):
+        self.physical_mesh_shape = get_shape(physical_mesh)
+        self.device_mesh = DeviceMesh(self.device_type, physical_mesh, mesh_dim_names=self.mesh_dim_names)
+
+    @property
+    def mesh_shape(self) -> tuple[int, ...]:
+        return self.physical_mesh_shape if self.physical_mesh_shape is not None else self.logical_mesh_shape
+
+    @property
+    def world_size(self) -> int:
+        return np.prod(self.physical_mesh_shape) if self.physical_mesh_shape is not None else np.prod(self.logical_mesh_shape)
 
     def get_device_mesh(self) -> DeviceMesh:
         assert self.device_mesh is not None

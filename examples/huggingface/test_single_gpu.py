@@ -56,7 +56,7 @@ def main():
 
     model = torchcap.export(model, example_args=(), example_kwargs=input_kwargs).module()
 
-    options = torchcap.torchcapOptions()
+    options = torchcap.CAPConfig()
     options.perf_model = "roofline"
     if args.cluster_env is not None:
         options.cluster_env = ClusterEnv.from_json(args.cluster_env)

@@ -5,11 +5,27 @@ import gc
 import torch
 from transformers import AutoTokenizer, AutoModel
 from torch.profiler import profile, ProfilerActivity
+from torch.distributed.tensor.placement_types import Shard
+from torch.distributed.tensor.parallel.style import RowwiseParallel, ColwiseParallel
 
 import torchcap
 from torchcap.cost_model.cost_model import round_memory, round_time
 from torchcap.cluster_env import ClusterEnv
 from torchcap.utils import see_memory_usage
+
+
+def make_default_sharding_plan(model: torch.nn.Module):
+    sharding_plan = {}
+    # column parallel
+    sharding_plan.update({
+        p: Shard(0) for p, _ in model.named_parameters() if "fc1.weight" in p
+    })
+    # row parallel
+    sharding_plan.update({
+        p: Shard(1) for p, _ in model.named_parameters() if "fc2.weight" in p
+    })
+    print(f"Sharding plan: {sharding_plan}")
+    return sharding_plan
 
 
 def main():
@@ -31,25 +47,24 @@ def main():
 
     input_ids = torch.randint(0, 10000, (16, 1024)).cuda()
 
-    # mesh = DeviceMesh(device_type="cuda", mesh=list(range(int(os.environ["WORLD_SIZE"]))))
-    # sharding_plan = ShardingPlan(mesh, {})
-    # sharding_plan.placements.update({
-    #     pname: Shard(0) for pname, _ in model.named_parameters() if "fc1.weight" in pname
-    # })
-    # sharding_plan.placements.update({
-    #     pname: Shard(1) for pname, _ in model.named_parameters() if "fc2.weight" in pname
-    # })
-    # print(f"Device mesh: {mesh}")
-    # print(f"Sharding plan: {sharding_plan}")
+    parallel_strategies = {}
+    parallel_strategies.update({
+        name: ColwiseParallel() for name, _ in model.named_modules() if "fc1" in name
+    })
+    parallel_strategies.update({
+        name: RowwiseParallel() for name, _ in model.named_modules() if "fc2" in name
+    })
+    # print(f"{parallel_strategies=}")
 
-    config = torchcap.torchcapOptions(perf_model="roofline")
+    config = torchcap.CAPConfig(perf_model="roofline")
     if args.cluster_env is not None:
         config.cluster_env = ClusterEnv.from_json(args.cluster_env)
     mesh_topo = config.cluster_env.mesh_topo
     # mesh_topo.mesh = mesh
-    mesh_topo.build_device_mesh(mesh=list(range(int(os.environ["WORLD_SIZE"]))))
-    print(f"Device mesh: {mesh_topo.get_device_mesh()}")
-    model = torchcap.optimize(model, (input_ids,), mesh_topo=mesh_topo, config=config)
+    # mesh_topo.build_device_mesh(mesh=list(range(int(os.environ["WORLD_SIZE"]))))
+    mesh_topo.materialize(physical_mesh=list(range(int(os.environ["WORLD_SIZE"]))))
+    print(f"Mesh topology: {mesh_topo}")
+    model = torchcap.optimize(model, (input_ids,), mesh_topo=mesh_topo, parallel_strategies=parallel_strategies, config=config)
     print(model)
 
     torch.cuda.empty_cache()
@@ -57,7 +72,7 @@ def main():
 
     see_memory_usage("After optimization")
 
-    graph_info = torchcap.estimate(model, (input_ids,), options=config)
+    graph_info = torchcap.estimate(model, (input_ids,), config=config)
     graph_info.print_tabular()
 
     see_memory_usage("After estimation")

@@ -17,7 +17,7 @@ from torch.utils._mode_utils import no_dispatch
 from torch.utils._python_dispatch import TorchDispatchMode
 # from torch.utils.flop_counter import flop_registry
 from torchcap.cost_model.flop_counter import flop_registry
-from torchcap.common import torchcapOptions
+from torchcap.common import CAPConfig
 
 aten = torch.ops.aten
 prim = torch.ops.prim
@@ -415,7 +415,7 @@ class RuntimeEstimator(TorchDispatchMode):
         # print(f"  {func=} {op_time=} total_runtime={self.total_runtime}")
         return res
 
-    def __call__(self, options: torchcapOptions) -> Self:
+    def __call__(self, options: CAPConfig) -> Self:
         """
         Sets the estimate mode type.
 

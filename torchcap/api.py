@@ -9,13 +9,15 @@ import torch
 from torch import fx
 from torch.export import ExportedProgram
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.distributed.tensor.parallel.style import ParallelStyle
 
-from torchcap import cost_model, sharding, solver
+from torchcap import cost_model, solver
 from torchcap.cost_model.cost_model import GraphInfo
-from torchcap.common import torchcapOptions
+from torchcap.common import CAPConfig
 from torchcap.backends import GraphRecorderBackend
 from torchcap.cluster_env import MeshTopology
 from torchcap.logging_utils import logger
+from torchcap.passes.tensor_parallel import tensor_parallel_transformation
 
 
 def export(
@@ -44,22 +46,24 @@ def optimize(
     example_args: tuple[Any, ...],
     example_kwargs: Optional[dict[str, Any]] = None,
     mesh_topo: Optional[MeshTopology] = None,
-    sharding_plan: Optional[sharding.ShardingPlan] = None,
-    config: Optional[torchcapOptions] = None,
+    parallel_strategies: Optional[dict[str, ParallelStyle]] = None,
+    config: Optional[CAPConfig] = None,
 ) -> torch.nn.Module:
-    assert mesh_topo is not None or sharding_plan is not None, \
+    assert config is not None
+    assert mesh_topo is not None or parallel_strategies is not None, \
         "Either device_mesh or sharding_plan must be provided"
     logger.info("Optimizing model...")
     # for n, p in program.state_dict.items():
     #     print(n, p.shape)
-    if sharding_plan is not None:
-        program = export(model, example_args, example_kwargs)
-        program = sharding.manual_sharding(program, sharding_plan)
-    else:
-        program = export(model, example_args, example_kwargs).run_decompositions()
-        graph_info = estimate(program, example_args, example_kwargs, config=config)
-        solver.solve_auto_sharding(
-            program.graph_module, program.graph_signature, graph_info, mesh_topo)
+    program = export(model, example_args, example_kwargs)
+
+    parallel_plan = solver.solve_auto_sharding(
+        program, mesh_topo, config.cluster_env.get_device_memory_capacity_bytes(), parallel_strategies
+    )
+
+    program = tensor_parallel_transformation(
+        program, mesh_topo, parallel_plan
+    )
     return program.module()
 
 
@@ -68,7 +72,7 @@ def estimate(
     example_args: tuple[Any, ...] = None,
     example_kwargs: Optional[dict[str, Any]] = None,
     is_training: bool = False,
-    config: torchcapOptions = None,
+    config: CAPConfig = None,
 ) -> GraphInfo:
     assert config is not None
     example_args = () if example_args is None else example_args

@@ -1,14 +1,14 @@
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
-CUDA_DEVICES="all"
+CUDA_DEVICES="4,5"
 
 export PYTHONPATH="$root_dir:$root_dir/third_party/torchtitan"
 
-TEST_TYPE="test_single_gpu"
+TEST_TYPE="single"
 MODEL_NAME="facebook/opt-2.7b"
 CLUSTER_ENV="a5000_24g_gala1.json"
 
-WORLD_SIZE=1
+WORLD_SIZE=2
 
 while getopts ":t:m:e:" opt; do
     case ${opt} in
@@ -25,15 +25,15 @@ echo "Logging to $log_file"
 
 # python $root_dir/examples/huggingface/test_huggingface.py --model ${MODEL_NAME} > $log_file 2>&1
 
-if [ "$TEST_TYPE" == "test_single_gpu" ]; then
+if [ "$TEST_TYPE" == "single" ]; then
 cmd="python /workspace/torchcap/examples/huggingface/test_single_gpu.py \
  --model ${MODEL_NAME} \
  --cluster-env /workspace/torchcap/configs/${CLUSTER_ENV}"
-elif [ "$TEST_TYPE" == "test_multi_gpu" ]; then
+elif [ "$TEST_TYPE" == "multi" ]; then
 cmd="torchrun --nproc_per_node=$WORLD_SIZE \
- examples/huggingface/test_multi_gpu.py \
+ /workspace/torchcap/examples/huggingface/test_multi_gpu.py \
  --model ${MODEL_NAME} \
- --cluster-env configs/${CLUSTER_ENV}"
+ --cluster-env /workspace/torchcap/configs/${CLUSTER_ENV}"
 fi
 
 echo "Running $cmd"
@@ -47,4 +47,4 @@ sudo docker run \
     -e HF_HOME=/workspace/cache \
     -e PYTHONPATH=$PYTHON_PATH:/workspace/torchcap \
     torchcap-env \
-    bash -c "nvidia-smi; $cmd" > $log_file 2>&1
+    bash -c "$cmd" > $log_file 2>&1
