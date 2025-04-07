@@ -4,15 +4,12 @@ CUDA_DEVICES="4,5"
 
 export PYTHONPATH="$root_dir:$root_dir/third_party/torchtitan"
 
-TEST_TYPE="single"
 MODEL_NAME="facebook/opt-2.7b"
 CLUSTER_ENV="a5000_24g_gala1.json"
 
-WORLD_SIZE=2
-
-while getopts ":t:m:e:" opt; do
+while getopts ":n:m:e:" opt; do
     case ${opt} in
-        t ) TEST_TYPE=${OPTARG} ;;
+        n ) WORLD_SIZE=${OPTARG} ;;
         m ) MODEL_NAME=${OPTARG} ;;
         e ) CLUSTER_ENV=${OPTARG} ;;
     esac
@@ -25,11 +22,11 @@ echo "Logging to $log_file"
 
 # python $root_dir/examples/huggingface/test_huggingface.py --model ${MODEL_NAME} > $log_file 2>&1
 
-if [ "$TEST_TYPE" == "single" ]; then
+if [ "$WORLD_SIZE" == "1" ]; then
 cmd="python /workspace/torchcap/examples/huggingface/test_single_gpu.py \
  --model ${MODEL_NAME} \
  --cluster-env /workspace/torchcap/configs/${CLUSTER_ENV}"
-elif [ "$TEST_TYPE" == "multi" ]; then
+elif [ "$WORLD_SIZE" -gt "1" ]; then
 cmd="torchrun --nproc_per_node=$WORLD_SIZE \
  /workspace/torchcap/examples/huggingface/test_multi_gpu.py \
  --model ${MODEL_NAME} \
