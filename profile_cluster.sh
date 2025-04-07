@@ -25,4 +25,4 @@ root_dir=$(cd "$(dirname "$0")" && pwd)
 docker run --ipc=host --shm-size=200g -it --rm --runtime=nvidia \
     -v ${root_dir}:/workspace/torchcap \
     torchcap-env \
-    bash -c "torchrun --nproc_per_node=$num_devices_per_node --nnodes=$num_nodes /workspace/torchcap/torchcap/cluster_env.py -o /workspace/torchcap/$output $opt_args"
+    bash -c "torchrun --nproc_per_node=$num_devices_per_node --nnodes=$num_nodes /workspace/torchcap/torchcap/cluster_env.py -o /workspace/torchcap/configs/$output $opt_args"

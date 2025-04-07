@@ -35,13 +35,11 @@ fi
 
 echo "Running $cmd"
 
-sudo docker run \
+docker run \
     --ipc=host --shm-size=200g -it --rm --runtime=nvidia \
     -e NVIDIA_VISIBLE_DEVICES=$CUDA_DEVICES \
     -v ${root_dir}:/workspace/torchcap \
-    -v $HF_HOME:/workspace/cache \
     -e CUDA_DEVICE_MAX_CONNECTIONS=1 \
-    -e HF_HOME=/workspace/cache \
     -e PYTHONPATH=$PYTHON_PATH:/workspace/torchcap \
     torchcap-env \
     bash -c "$cmd" > $log_file 2>&1
