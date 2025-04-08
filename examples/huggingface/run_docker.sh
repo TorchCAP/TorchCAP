@@ -1,11 +1,9 @@
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
-CUDA_DEVICES="4,5"
-
 export PYTHONPATH="$root_dir:$root_dir/third_party/torchtitan"
 
 MODEL_NAME="facebook/opt-2.7b"
-CLUSTER_ENV="a5000_24g_gala1.json"
+CLUSTER_ENV="configs/a5000_24g_gala1.json"
 
 while getopts ":n:m:e:" opt; do
     case ${opt} in
@@ -25,21 +23,30 @@ echo "Logging to $log_file"
 if [ "$WORLD_SIZE" == "1" ]; then
 cmd="python /workspace/torchcap/examples/huggingface/test_single_gpu.py \
  --model ${MODEL_NAME} \
- --cluster-env /workspace/torchcap/configs/${CLUSTER_ENV}"
+ --cluster-env /workspace/torchcap/${CLUSTER_ENV}"
 elif [ "$WORLD_SIZE" -gt "1" ]; then
 cmd="torchrun --nproc_per_node=$WORLD_SIZE \
  /workspace/torchcap/examples/huggingface/test_multi_gpu.py \
  --model ${MODEL_NAME} \
- --cluster-env /workspace/torchcap/configs/${CLUSTER_ENV}"
+ --cluster-env /workspace/torchcap/${CLUSTER_ENV}"
+fi
+
+# Check if HF_HOME is set and the directory exists
+echo "HF_HOME: $HF_HOME"
+if [[ -n "$HF_HOME" && -d "$HF_HOME" ]]; then
+  HF_MOUNT="-v $HF_HOME:$HF_HOME"
+else
+  HF_MOUNT=""
 fi
 
 echo "Running $cmd"
 
 docker run \
-    --ipc=host --shm-size=200g -it --rm --runtime=nvidia \
-    -e NVIDIA_VISIBLE_DEVICES=$CUDA_DEVICES \
+    --ipc=host --shm-size=200g -it --rm --runtime=nvidia --gpus '"device=1,2"' \
     -v ${root_dir}:/workspace/torchcap \
     -e CUDA_DEVICE_MAX_CONNECTIONS=1 \
     -e PYTHONPATH=$PYTHON_PATH:/workspace/torchcap \
+    $HF_MOUNT \
+    -e HF_HOME="$HF_HOME" \
     torchcap-env \
     bash -c "$cmd" > $log_file 2>&1
