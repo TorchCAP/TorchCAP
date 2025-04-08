@@ -136,7 +136,7 @@ class AlphaBetaModel:
     def from_data(x: NDArray, y: NDArray, **kwargs):
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(2)
+        model.fit(4)
         intercepts = model.intercepts
         slopes = model.slopes
         breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
@@ -179,7 +179,7 @@ class AlphaBetaModel:
         # Create a piecewise linear fit model
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(2)
+        model.fit(4)
         breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
         breakpoints[0] = -np.inf             # Set the first breakpoint to -inf
         return AlphaBetaModel(
