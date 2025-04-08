@@ -1,4 +1,5 @@
 from typing import Optional, Any
+from functools import cmp_to_key
 import gc
 import warnings
 import numpy as np
@@ -573,6 +574,7 @@ class ClusterEnv:
         return cluster_env
 
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--type", type=str, default="all", choices=["all", "compute", "memory", "comm"])
@@ -580,9 +582,23 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--save-plot", action="store_true")
     args = parser.parse_args()
 
-    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
 
-    print(f"Profiling cluster environment ({args.output})...")
+    def sort_device(x, y):
+        x_free, x_total = torch.cuda.mem_get_info(x)
+        y_free, y_total = torch.cuda.mem_get_info(y)
+        x_util = (x_total - x_free) / x_total
+        y_util = (y_total - y_free) / y_total
+        if x_util == y_util:
+            return 0
+        elif x_util < y_util:
+            return -1
+        else:
+            return 1
+    deviceIDs = np.arange(torch.cuda.device_count())
+    deviceIDs = sorted(deviceIDs, key=cmp_to_key(sort_device))
+    torch.cuda.set_device(int(deviceIDs[0]))
+
+    # torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
 
     num_devices_per_node = int(os.environ["LOCAL_WORLD_SIZE"])
     num_nodes = int(os.environ["WORLD_SIZE"]) // num_devices_per_node
