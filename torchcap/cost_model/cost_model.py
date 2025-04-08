@@ -19,6 +19,7 @@ from torchcap.fx_utils import materialize_arg, dtypes_of, size_of
 from torchcap.common import CAPConfig
 from torchcap.cost_model.runtime_estimator import RuntimeEstimator
 from torchcap.cost_model import comm_model, memory
+from torch._ops import HigherOrderOperator
 
 c10d_ops = torch.ops.c10d
 aten = torch.ops.aten
@@ -339,8 +340,12 @@ def estimate_collective_runtime(node: fx.Node, config: CAPConfig) -> float:
     return t
 
 
+def is_hops(node: fx.Node) -> bool:
+    return isinstance(node.target, HigherOrderOperator)
+
+
 def estimate_runtime(node: fx.Node, config: CAPConfig) -> float:
-    if node.op != "call_function" or node.target in _IGNORE_OPS:
+    if node.op != "call_function" or node.target in _IGNORE_OPS or is_hops(node):
         return 0
 
     if is_collective(node):

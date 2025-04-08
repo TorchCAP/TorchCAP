@@ -39,7 +39,8 @@ class StorageInfo:
 
 def get_storages(node: Node) -> set[torch.UntypedStorage]:
     stors = set()
-    tree_map_only(torch.Tensor, lambda x: stors.add(x.untyped_storage()), node.meta["val"])
+    if "val" in node.meta:
+        tree_map_only(torch.Tensor, lambda x: stors.add(x.untyped_storage()), node.meta["val"])
     return stors
 
 
