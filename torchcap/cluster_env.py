@@ -118,11 +118,14 @@ class AlphaBetaModel:
     def __call__(self, x: float) -> float:
         if x == 0:
             return 0.0
+        elif x < 0:
+            raise ValueError("x must be non-negative")
         
         bkID = 0
         for i, e in enumerate(self.breakpoints):
-            if x < e:
+            if x > e:
                 bkID = i
+            else:
                 break
         alpha = self.alpha[bkID]
         beta = self.beta[bkID]
@@ -136,7 +139,8 @@ class AlphaBetaModel:
         model.fit(2)
         intercepts = model.intercepts
         slopes = model.slopes
-        breakpoints = model.breakpoints
+        breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
+        breakpoints[0] = -np.inf             # Set the first breakpoint to -inf
         print(f"Created alpha-beta model")
         print(f"  - intercept: {intercepts}")
         print(f"  - slope: {slopes}")
@@ -176,10 +180,12 @@ class AlphaBetaModel:
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
         model.fit(2)
+        breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
+        breakpoints[0] = -np.inf             # Set the first breakpoint to -inf
         return AlphaBetaModel(
             model.intercepts,
             model.slopes,
-            model.breakpoints,
+            breakpoints,
             (np.array(data["data"][0]), np.array(data["data"][1]))
         )
 

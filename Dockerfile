@@ -6,3 +6,4 @@ RUN apt install -y graphviz
 
 RUN pip install --upgrade pip setuptools
 RUN pip install tabulate ortools transformers
+RUN pip install pwlf
