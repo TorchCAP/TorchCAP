@@ -121,8 +121,12 @@ class AlphaBetaModel:
         elif x < 0:
             raise ValueError("x must be non-negative")
         
+        breakpoints = self.breakpoints
+        breakpoints = breakpoints[:-1]  # Exclude the last breakpoint
+        breakpoints[0] = -np.inf        # Set the first point to be -inf
+
         bkID = 0
-        for i, e in enumerate(self.breakpoints):
+        for i, e in enumerate(breakpoints):
             if x > e:
                 bkID = i
             else:
@@ -136,17 +140,16 @@ class AlphaBetaModel:
     def from_data(x: NDArray, y: NDArray, **kwargs):
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(4)
+        model.fit(6)
         intercepts = model.intercepts
         slopes = model.slopes
-        breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
-        breakpoints[0] = -np.inf             # Set the first breakpoint to -inf
+        breakpoints = model.fit_breaks
         print(f"Created alpha-beta model")
         print(f"  - intercept: {intercepts}")
         print(f"  - slope: {slopes}")
         print(f"  - breakpoints: {breakpoints}")
 
-        return AlphaBetaModel(intercepts, slopes, breakpoints (x, y))
+        return AlphaBetaModel(intercepts, slopes, breakpoints, (x, y))
 
         # from sklearn.linear_model import LinearRegression
 
@@ -179,13 +182,11 @@ class AlphaBetaModel:
         # Create a piecewise linear fit model
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(4)
-        breakpoints = model.fit_breaks[:-1]  # Exclude the last breakpoint
-        breakpoints[0] = -np.inf             # Set the first breakpoint to -inf
+        model.fit(6)
         return AlphaBetaModel(
             model.intercepts,
             model.slopes,
-            breakpoints,
+            model.fit_breaks,
             (np.array(data["data"][0]), np.array(data["data"][1]))
         )
 
@@ -210,7 +211,9 @@ class AlphaBetaModel:
         plt.grid(True)
 
         if file_name:
+            # Save the plot
             plt.savefig(file_name)
+            plt.close()  # Close the plot to free memory
             print(f"Saved plot to {file_name}")
 
 
@@ -657,10 +660,10 @@ if __name__ == "__main__":
     print(f"Done profiling cluster environment ({args.output})")
 
     if args.save_plot and mesh.get_rank() == 0:
-        base_name = os.path.splitext(os.path.basename(args.output))[0]
-        cluster.device_compute_time_model[torch.float16].plot(base_name + "_compute_time_fp16.png")
-        cluster.device_compute_time_model[torch.bfloat16].plot(base_name + "_compute_time_bf16.png")
-        cluster.device_compute_time_model[torch.float32].plot(base_name + "_compute_time_fp32.png")
-        cluster.device_memory_time_model.plot(base_name + "_memory_time.png")
+        base_name = os.path.dirname(args.output) + "/"
+        cluster.device_compute_time_model[torch.float16].plot(base_name + "compute_time_fp16.png")
+        cluster.device_compute_time_model[torch.bfloat16].plot(base_name + "compute_time_bf16.png")
+        cluster.device_compute_time_model[torch.float32].plot(base_name + "compute_time_fp32.png")
+        cluster.device_memory_time_model.plot(base_name + "memory_time.png")
         for mesh_dim, comm_model in cluster.mesh_topo.comm_model.items():   
-            comm_model.plot(base_name + f"_comm_time_dim{mesh_dim}.png")
+            comm_model.plot(base_name + f"comm_time_dim{mesh_dim}.png")
