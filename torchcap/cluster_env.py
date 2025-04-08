@@ -123,7 +123,7 @@ class AlphaBetaModel:
         
         breakpoints = self.breakpoints
         breakpoints = breakpoints[:-1]  # Exclude the last breakpoint
-        breakpoints[0] = -np.inf        # Set the first point to be -inf
+        breakpoints[0] = -np.inf        # Set the first point to be 0
 
         bkID = 0
         for i, e in enumerate(breakpoints):
@@ -140,7 +140,12 @@ class AlphaBetaModel:
     def from_data(x: NDArray, y: NDArray, **kwargs):
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(6)
+
+        num_seg = 6
+        id = np.linspace(0, len(x) - 1, num_seg + 1).astype(int)
+        breakpoints = np.array(x[id], dtype=np.float32)
+        model.fit_with_breaks(breakpoints)
+
         intercepts = model.intercepts
         slopes = model.slopes
         breakpoints = model.fit_breaks
@@ -182,7 +187,13 @@ class AlphaBetaModel:
         # Create a piecewise linear fit model
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
-        model.fit(6)
+        
+        # evenly pick points of x as breakpoints
+        num_seg = 6
+        id = np.linspace(0, len(x) - 1, num_seg + 1).astype(int)
+        breakpoints = np.array(x[id], dtype=np.float32)
+        model.fit_with_breaks(breakpoints)
+
         return AlphaBetaModel(
             model.intercepts,
             model.slopes,
