@@ -103,13 +103,14 @@ def get_peak_gpu_tflops(dtype):
 
 class AlphaBetaModel:
 
-    def __init__(self, alpha: NDArray, beta: NDArray, data: tuple[NDArray, NDArray]):
+    def __init__(self, alpha: NDArray, beta: NDArray, breakpoints: NDArray, data: tuple[NDArray, NDArray]):
         self.alpha = alpha
         self.beta = beta
+        self.breakpoints = breakpoints
         self.data = data
 
     def __str__(self):
-        return f"AlphaBetaModel(alpha={self.alpha}, beta={self.beta})"
+        return f"AlphaBetaModel(alpha={self.alpha}, beta={self.beta}, breakpoints={self.breakpoints})"
 
     def __repr__(self):
         return self.__str__()
@@ -117,37 +118,68 @@ class AlphaBetaModel:
     def __call__(self, x: float) -> float:
         if x == 0:
             return 0.0
-        return max(0, self.alpha + self.beta * x)
+        
+        bkID = 0
+        for i, e in enumerate(self.breakpoints):
+            if x < e:
+                bkID = i
+                break
+        alpha = self.alpha[bkID]
+        beta = self.beta[bkID]
+
+        return max(0, alpha + beta * x)
 
     @staticmethod
     def from_data(x: NDArray, y: NDArray, **kwargs):
-        from sklearn.linear_model import LinearRegression
-
-        model = LinearRegression(**kwargs)
-        model.fit(x.reshape(-1, 1), y.reshape(-1, 1))
-
-        # Obtain the slopes, intercepts and breakpoints of the fitted piecewise linear functions
-        intercept = model.intercept_[0]
-        slope = model.coef_[0][0]
-
+        import pwlf
+        model = pwlf.PiecewiseLinFit(x, y)
+        model.fit(2)
+        intercepts = model.intercepts
+        slopes = model.slopes
+        breakpoints = model.breakpoints
         print(f"Created alpha-beta model")
-        print(f"  - intercept: {intercept}")
-        print(f"  - slope: {slope}")
+        print(f"  - intercept: {intercepts}")
+        print(f"  - slope: {slopes}")
+        print(f"  - breakpoints: {breakpoints}")
 
-        return AlphaBetaModel(intercept, slope, (x, y))
+        return AlphaBetaModel(intercepts, slopes, breakpoints (x, y))
+
+        # from sklearn.linear_model import LinearRegression
+
+        # model = LinearRegression(**kwargs)
+        # model.fit(x.reshape(-1, 1), y.reshape(-1, 1))
+
+        # # Obtain the slopes, intercepts and breakpoints of the fitted piecewise linear functions
+        # intercept = model.intercept_[0]
+        # slope = model.coef_[0][0]
+
+        # print(f"Created alpha-beta model")
+        # print(f"  - intercept: {intercept}")
+        # print(f"  - slope: {slope}")
+
+        # return AlphaBetaModel(intercept, slope, (x, y))
 
     def to_dict(self):
         return {
-            "alpha": self.alpha,
+            "alpha": self.alpha.tolist(),
             "beta": self.beta.tolist(),
+            "breakpoints": self.breakpoints.tolist(),
             "data": (self.data[0].tolist(), self.data[1].tolist()),
         }
 
     @staticmethod
     def from_dict(data: dict):
+        x = np.array(data["data"][0])
+        y = np.array(data["data"][1])
+
+        # Create a piecewise linear fit model
+        import pwlf
+        model = pwlf.PiecewiseLinFit(x, y)
+        model.fit(2)
         return AlphaBetaModel(
-            np.array(data["alpha"]),
-            np.array(data["beta"]),
+            model.intercepts,
+            model.slopes,
+            model.breakpoints,
             (np.array(data["data"][0]), np.array(data["data"][1]))
         )
 
