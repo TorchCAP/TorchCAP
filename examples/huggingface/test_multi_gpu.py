@@ -1,9 +1,10 @@
 import argparse
 import os
 import gc
+import re
 
 import torch
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 from torch.profiler import profile, ProfilerActivity
 from torch.distributed.tensor.placement_types import Shard
 from torch.distributed.tensor.parallel.style import RowwiseParallel, ColwiseParallel
@@ -12,7 +13,7 @@ import torchcap
 from torchcap.cost_model.cost_model import round_memory, round_time
 from torchcap.cluster_env import ClusterEnv
 from torchcap.utils import see_memory_usage
-
+from torchcap.logging_utils import init_logger, logger
 
 def make_default_sharding_plan(model: torch.nn.Module):
     sharding_plan = {}
@@ -26,6 +27,20 @@ def make_default_sharding_plan(model: torch.nn.Module):
     })
     print(f"Sharding plan: {sharding_plan}")
     return sharding_plan
+
+
+def make_huggingface_tp_strategy(model: torch.nn.Module):
+    colwise = {"fc1", "q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"}
+    rowwise = {"fc2", "down_proj"}
+
+    parallel_strategies = {}
+    for name, _ in model.named_modules():
+        if any(c in name for c in colwise):
+            parallel_strategies[name] = ColwiseParallel()
+        elif any(r in name for r in rowwise):
+            parallel_strategies[name] = RowwiseParallel()
+
+    return parallel_strategies
 
 
 def main():
@@ -47,15 +62,6 @@ def main():
 
     input_ids = torch.randint(0, 10000, (16, 1024)).cuda()
 
-    parallel_strategies = {}
-    parallel_strategies.update({
-        name: ColwiseParallel() for name, _ in model.named_modules() if "fc1" in name
-    })
-    parallel_strategies.update({
-        name: RowwiseParallel() for name, _ in model.named_modules() if "fc2" in name
-    })
-    # print(f"{parallel_strategies=}")
-
     config = torchcap.CAPConfig(perf_model="roofline")
     if args.cluster_env is not None:
         config.cluster_env = ClusterEnv.from_json(args.cluster_env)
@@ -64,6 +70,17 @@ def main():
     # mesh_topo.build_device_mesh(mesh=list(range(int(os.environ["WORLD_SIZE"]))))
     mesh_topo.materialize(physical_mesh=list(range(int(os.environ["WORLD_SIZE"]))))
     print(f"Mesh topology: {mesh_topo}")
+
+    parallel_strategies = make_huggingface_tp_strategy(model)
+    # parallel_strategies.update({
+    #     name: ColwiseParallel() for name, _ in model.named_modules() if "fc1" in name
+    # })
+    # parallel_strategies.update({
+    #     name: RowwiseParallel() for name, _ in model.named_modules() if "fc2" in name
+    # })
+    if torch.distributed.get_rank() == 0:
+        print(f"{parallel_strategies=}")
+
     model = torchcap.optimize(model, (input_ids,), mesh_topo=mesh_topo, parallel_strategies=parallel_strategies, config=config)
     print(model)
 
