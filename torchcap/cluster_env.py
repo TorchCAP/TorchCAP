@@ -657,10 +657,10 @@ if __name__ == "__main__":
     print(f"Done profiling cluster environment ({args.output})")
 
     if args.save_plot and mesh.get_rank() == 0:
-        base_name = os.path.dirname(args.output) + "/"
-        cluster.device_compute_time_model[torch.float16].plot(base_name + "compute_time_fp16.png")
-        cluster.device_compute_time_model[torch.bfloat16].plot(base_name + "compute_time_bf16.png")
-        cluster.device_compute_time_model[torch.float32].plot(base_name + "compute_time_fp32.png")
-        cluster.device_memory_time_model.plot(base_name + "memory_time.png")
+        base_name = os.path.splitext(args.output)[0]
+        cluster.device_compute_time_model[torch.float16].plot(base_name + "_compute_time_fp16.png")
+        cluster.device_compute_time_model[torch.bfloat16].plot(base_name + "_compute_time_bf16.png")
+        cluster.device_compute_time_model[torch.float32].plot(base_name + "_compute_time_fp32.png")
+        cluster.device_memory_time_model.plot(base_name + "_memory_time.png")
         for mesh_dim, comm_model in cluster.mesh_topo.comm_model.items():   
-            comm_model.plot(base_name + f"comm_time_dim{mesh_dim}.png")
+            comm_model.plot(base_name + f"_comm_time_dim{mesh_dim}.png")
