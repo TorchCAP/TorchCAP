@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,15 +8,36 @@ version = "0.0.1"
 authors = [
   { name="Man-Kit Sit", email="mankit.sit@ed.ac.uk" },
 ]
-description = "TorchCAP"
+description = "TorchCAP: A PyTorch-based tool for communication-aware parallel distributed training"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 license = { text = "MIT" }
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.20.0",
+    "typing-extensions>=4.0.0",
+    "matplotlib>=3.5.0",
+    "networkx>=2.6.0",
+    "tqdm>=4.62.0",
+    "tabulate>=0.8.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/TorchCAP/TorchCAP"
 Issues = "https://github.com/TorchCAP/TorchCAP/issues"
+
+[tool.setuptools]
+packages = [
+    "torchcap",
+    "torchcap.cost_model",
+    "torchcap.passes",
+    "torchcap.solver"
+]
+
+[tool.setuptools.exclude-package-data]
+torchcap = ["solver/pybind_solver.cc", "solver/pybind_solver.py"]
