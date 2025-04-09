@@ -1,10 +1,9 @@
 import argparse
 import os
 import gc
-import re
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
+from transformers import AutoTokenizer, AutoModel
 from torch.profiler import profile, ProfilerActivity
 from torch.distributed.tensor.placement_types import Shard
 from torch.distributed.tensor.parallel.style import RowwiseParallel, ColwiseParallel
@@ -13,7 +12,6 @@ import torchcap
 from torchcap.cost_model.cost_model import round_memory, round_time
 from torchcap.cluster_env import ClusterEnv
 from torchcap.utils import see_memory_usage
-from torchcap.logging_utils import init_logger, logger
 
 def make_default_sharding_plan(model: torch.nn.Module):
     sharding_plan = {}
