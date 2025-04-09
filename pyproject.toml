@@ -23,7 +23,7 @@ dependencies = [
     "numpy==1.26.4",
     "tabulate==0.8.0",
     "ortools==9.12.4544",
-    "pwlf>=2.5.1",
+    "pwlf==2.5.1",
     "matplotlib==3.10.1",
 ]
 
