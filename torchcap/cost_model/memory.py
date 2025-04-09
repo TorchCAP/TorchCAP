@@ -3,7 +3,6 @@ import math
 
 import torch
 from torch.fx import Node
-from torch.export.graph_signature import InputKind
 from torch.utils._pytree import tree_map_only
 
 from torchcap.fx_utils import size_of

@@ -1,20 +1,17 @@
 from typing import Any
-import os
 
 import operator
 import warnings
 import torch
 from torch import fx
 import torch.utils._pytree as pytree
-from torch._inductor.utils import get_device_tflops, get_gpu_dram_gbps
-from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.utils._mode_utils import no_dispatch
 from torch._guards import active_fake_mode
 from torch.distributed import DeviceMesh
 
-from torchcap.cost_model.comm_model import is_collective, estimate_nccl_collective_runtime
+from torchcap.cost_model.comm_model import is_collective
 from torchcap.cost_model.flop_counter import FlopCounterMode
-from torchcap.cost_model.memory_estimator import MemoryEstimator, MemType
+from torchcap.cost_model.memory_estimator import MemoryEstimator
 from torchcap.fx_utils import materialize_arg, dtypes_of, size_of
 from torchcap.common import CAPConfig
 from torchcap.cost_model.runtime_estimator import RuntimeEstimator
