@@ -138,6 +138,8 @@ class AlphaBetaModel:
 
     @staticmethod
     def from_data(x: NDArray, y: NDArray, **kwargs):
+        x, y = AlphaBetaModel.__workaround_clean_data((x, y))
+        
         import pwlf
         model = pwlf.PiecewiseLinFit(x, y)
 
@@ -183,6 +185,7 @@ class AlphaBetaModel:
     def from_dict(data: dict):
         x = np.array(data["data"][0])
         y = np.array(data["data"][1])
+        x, y = AlphaBetaModel.__workaround_clean_data((x, y))
 
         # Create a piecewise linear fit model
         import pwlf
@@ -226,6 +229,27 @@ class AlphaBetaModel:
             plt.savefig(file_name)
             plt.close()  # Close the plot to free memory
             print(f"Saved plot to {file_name}")
+
+    @staticmethod
+    def __workaround_clean_data(data) -> NDArray:
+        x: NDArray = data[0]
+        y: NDArray = data[1]
+
+        # Average y values for duplicate x values
+        data_dict = defaultdict(list)
+        for i in range(len(x)):
+            data_dict[x[i]].append(y[i])
+        x_cleaned = []
+        y_cleaned = []
+        for key, values in data_dict.items():
+            x_cleaned.append(key)
+            y_cleaned.append(np.mean(values))
+        x_cleaned = np.array(x_cleaned)
+        y_cleaned = np.array(y_cleaned)
+        
+        return np.array([x_cleaned, y_cleaned])
+
+
 
 
 def get_shape(x: Any) -> tuple[int, ...]:
