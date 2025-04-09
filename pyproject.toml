@@ -24,6 +24,7 @@ dependencies = [
     "tabulate==0.8.0",
     "ortools==9.12.4544",
     "pwlf>=2.5.1",
+    "matplotlib==3.10.1",
 ]
 
 [project.urls]

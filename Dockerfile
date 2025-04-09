@@ -1,17 +1,15 @@
-FROM nvcr.io/nvidia/pytorch:25.01-py3
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     libeigen3-dev \
     swig \
     graphviz \
-    git \
-    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Upgrade pip and setuptools
+RUN python -m pip install --upgrade pip setuptools
 
 # Create directory for TorchCAP
 WORKDIR /workspace/torchcap
