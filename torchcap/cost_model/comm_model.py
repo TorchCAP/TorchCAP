@@ -289,12 +289,14 @@ def estimate_nccl_collective_runtime(node: fx.Node) -> float:
     return transport_ns + latency_ns
 
 
+
 def all_reduce_cost(op_bytes: int, mesh_topo: MeshTopology, mesh_dim: int) -> float:
     assert mesh_topo is not None and mesh_dim in mesh_topo.comm_model
     num_devices = mesh_topo.mesh_shape[mesh_dim]
     bytes_gb = op_bytes / 2**30 # size in GB
     x = 2 * (num_devices - 1) / num_devices * bytes_gb
-    return mesh_topo.comm_model[mesh_dim](x)
+    comp_ovlp_coefficient = 2
+    return mesh_topo.comm_model[mesh_dim](x)*comp_ovlp_coefficient
 
 
 def all_gather_cost(op_bytes: int, mesh_topo: MeshTopology, mesh_dim: int) -> float:
