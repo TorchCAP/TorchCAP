@@ -121,13 +121,13 @@ class AlphaBetaModel:
         elif x < 0:
             raise ValueError("x must be non-negative")
         
-        breakpoints = self.breakpoints
+        breakpoints = np.copy(self.breakpoints)
         breakpoints = breakpoints[:-1]  # Exclude the last breakpoint
         breakpoints[0] = -np.inf        # Set the first point to be 0
 
         bkID = 0
         for i, e in enumerate(breakpoints):
-            if x > e:
+            if x >= e:
                 bkID = i
             else:
                 break
