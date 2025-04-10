@@ -21,7 +21,14 @@ from torch.distributed.tensor._op_schema import (
 from torch.distributed.tensor._dtensor_spec import TensorMeta, DTensorSpec
 from torch.distributed.tensor._op_schema import OpSchema
 from torch.distributed.tensor._ops.utils import register_op_strategy, RuntimeSchemaInfo
-from torch.distributed.tensor._ops._matrix_ops import expand_to_full_mesh_op_strategy
+from torch.distributed.tensor._ops._matrix_ops import (
+    gen_einsum_strategies,
+    infer_broadcast_dims_map,
+    map_placements_after_broadcast,
+    is_tensor_shardable,
+    generate_redistribute_costs,
+    expand_to_full_mesh_op_strategy,
+)
 
 
 aten = torch.ops.aten
@@ -43,7 +50,7 @@ def linear_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
     single_mesh_dim_strategies.append(all_replicate)
 
     # colwise parallel
-    colwise_parallel: PlacementList = [Shard(num_input_dims-1), Replicate(), Shard(0), Replicate()]
+    colwise_parallel: PlacementList = [Shard(num_input_dims-1), Replicate(), Shard(0), Shard(0)]
     single_mesh_dim_strategies.append(colwise_parallel)
 
     # rowwise parallel

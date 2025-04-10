@@ -43,7 +43,7 @@ def export(
 
 def optimize(
     model: Callable,
-    example_args: tuple[Any, ...],
+    example_args: tuple[Any, ...] = None,
     example_kwargs: Optional[dict[str, Any]] = None,
     mesh_topo: Optional[MeshTopology] = None,
     parallel_strategies: Optional[dict[str, ParallelStyle]] = None,
@@ -52,6 +52,8 @@ def optimize(
     assert config is not None
     assert mesh_topo is not None or parallel_strategies is not None, \
         "Either device_mesh or sharding_plan must be provided"
+    example_args = () if example_args is None else example_args
+    example_kwargs = {} if example_kwargs is None else example_kwargs
     logger.info("Optimizing model...")
     # for n, p in program.state_dict.items():
     #     print(n, p.shape)
