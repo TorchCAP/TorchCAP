@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, cast
+from typing import Sequence
 from itertools import product
 
 import torch

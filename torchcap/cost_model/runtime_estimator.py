@@ -10,9 +10,7 @@ from typing_extensions import Self
 import torch
 import torch.utils._pytree as pytree
 from torch._guards import active_fake_mode
-from torch._inductor.utils import get_device_tflops, get_gpu_dram_gbps
 from torch._subclasses.fake_tensor import FakeTensorMode
-from torch.distributed._tools.mod_tracker import ModTracker
 from torch.utils._mode_utils import no_dispatch
 from torch.utils._python_dispatch import TorchDispatchMode
 # from torch.utils.flop_counter import flop_registry

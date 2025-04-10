@@ -14,14 +14,13 @@ from torch.distributed.tensor import (
     Placement,
     Replicate,
 )
-from torch.distributed.tensor._dtensor_spec import DTensorSpec, TensorMeta
+from torch.distributed.tensor._dtensor_spec import DTensorSpec
 from torch.distributed.tensor._op_schema import (
     OpStrategy,
     PlacementStrategy,
 )
-from torch.fx.immutable_collections import immutable_dict, immutable_list 
 import torch.utils._pytree as pytree
-from torch.distributed.tensor.parallel.style import ParallelStyle, ColwiseParallel, Shard
+from torch.distributed.tensor.parallel.style import ParallelStyle
 
 from torchcap.cluster_env import MeshTopology
 from torchcap.passes.utils import ParallelPlan

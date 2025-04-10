@@ -6,7 +6,6 @@ from typing import (
 )
 
 import torch
-from torch import fx
 from torch.export import ExportedProgram
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.distributed.tensor.parallel.style import ParallelStyle

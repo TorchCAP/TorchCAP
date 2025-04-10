@@ -1,5 +1,4 @@
 from torchcap.cluster_env import ClusterEnv
-from torch.distributed import DeviceMesh
 
 class CAPConfig:
 

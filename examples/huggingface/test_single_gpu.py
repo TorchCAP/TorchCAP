@@ -1,21 +1,14 @@
 import argparse
 import gc
-import logging
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
-from torch.profiler import profile, record_function, ProfilerActivity
-from torch.autograd import DeviceType
-from torch.distributed._tools.runtime_estimator import RuntimeEstimator
-from torch._subclasses import FakeTensorMode
-from torch.nn.attention import SDPBackend, sdpa_kernel
-from torch._functorch.aot_autograd import aot_export_module
-import torch.utils._pytree as pytree
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from torch.profiler import profile, ProfilerActivity
 
 import torchcap
 from torchcap.cost_model.cost_model import round_memory, round_time
 from torchcap.cluster_env import ClusterEnv
 from torchcap.utils import see_memory_usage
-from torchcap.logging_utils import init_logger, logger
+from torchcap.logging_utils import init_logger
 
 
 class HuggingfaceModelWrapper(torch.nn.Module):
