@@ -370,6 +370,11 @@ def estimate_runtime(node: fx.Node, config: CAPConfig) -> float:
     #         return 0
     #     return (a - b) / b * 100
     # print(f"node: {node.name}, target: {node.target}, {op_time=:.2f}, {measured=:.2f}, Error: {op_time - measured:.3f} ({error(op_time, measured):.3f}%)")
+    
+    hardware_overhead_coefficient = 0.92
+    op_time *= hardware_overhead_coefficient
+
+
     return op_time
 
 
@@ -390,6 +395,8 @@ def estimate_graph_cost(mod: torch.nn.Module, gm: torch.fx.GraphModule, config: 
     all_node_runtimes = {node.name: estimate_runtime(node, config) for node in gm.graph.nodes}
     all_node_memories = {node.name: size_of(node) for node in gm.graph.nodes}
     memory_uses, peak_memory = memory.estimate_memory(mod, gm)
+
+
 
     return GraphInfo(
         all_nodes=all_nodes,

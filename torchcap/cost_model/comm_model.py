@@ -295,7 +295,7 @@ def all_reduce_cost(op_bytes: int, mesh_topo: MeshTopology, mesh_dim: int) -> fl
     num_devices = mesh_topo.mesh_shape[mesh_dim]
     bytes_gb = op_bytes / 2**30 # size in GB
     x = 2 * (num_devices - 1) / num_devices * bytes_gb
-    comp_ovlp_coefficient = 2
+    comp_ovlp_coefficient = 1.9
     return mesh_topo.comm_model[mesh_dim](x)*comp_ovlp_coefficient
 
 
