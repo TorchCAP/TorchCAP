@@ -30,15 +30,15 @@ def make_default_sharding_plan(model: torch.nn.Module):
 
 
 def make_huggingface_tp_strategy(model: torch.nn.Module):
-    colwise = {"fc1", "q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"}
+    colwise = {"fc1", "gate_proj", "up_proj"}
     rowwise = {"fc2", "down_proj"}
 
     parallel_strategies = {}
     for name, _ in model.named_modules():
         if any(c in name for c in colwise):
-            parallel_strategies[name] = ColwiseParallel()
+            parallel_strategies[name] = ColwiseParallel
         elif any(r in name for r in rowwise):
-            parallel_strategies[name] = RowwiseParallel()
+            parallel_strategies[name] = RowwiseParallel
 
     return parallel_strategies
 
@@ -55,12 +55,20 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     tokenizer.add_bos_token = False
 
-    model: torch.nn.Module = AutoModel.from_pretrained(args.model, torch_dtype=torch.float16)
+    model: torch.nn.Module = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=torch.float16,
+        return_dict=False,
+    )
+    # disable cache to allow tracing
+    model.config.use_cache = False
     model.cuda()
 
     see_memory_usage("After model creation")
 
     input_ids = torch.randint(0, 10000, (16, 1024)).cuda()
+    labels = torch.randint(0, 10000, (16, 1024)).cuda()
+    input_kwargs = {"input_ids": input_ids, "labels": labels}
 
     config = torchcap.CAPConfig(perf_model="roofline")
     if args.cluster_env is not None:
@@ -81,7 +89,13 @@ def main():
     if torch.distributed.get_rank() == 0:
         print(f"{parallel_strategies=}")
 
-    model = torchcap.optimize(model, (input_ids,), mesh_topo=mesh_topo, parallel_strategies=parallel_strategies, config=config)
+    model = torchcap.optimize(
+        model,
+        example_kwargs=input_kwargs,
+        mesh_topo=mesh_topo,
+        parallel_strategies=parallel_strategies,
+        config=config,
+    )
     print(model)
 
     torch.cuda.empty_cache()
@@ -89,7 +103,11 @@ def main():
 
     see_memory_usage("After optimization")
 
-    graph_info = torchcap.estimate(model, (input_ids,), config=config)
+    graph_info = torchcap.estimate(
+        model,
+        example_kwargs=input_kwargs,
+        config=config,
+    )
     graph_info.print_tabular()
 
     see_memory_usage("After estimation")
@@ -107,14 +125,17 @@ def main():
         with_stack=True,
         with_flops=True,
     ) as prof:
-        niters = 5
+        niters = 1
+        torch.cuda.synchronize()
+        torch.distributed.barrier()
         start.record()
         with torch.no_grad():
             for _ in range(niters):
                 prof.step()
-                model(input_ids)
-        end.record()
+                model(**input_kwargs)
         torch.cuda.synchronize()
+        torch.distributed.barrier()
+        end.record()
         wall_time_us = start.elapsed_time(end) / niters * 1e3
 
     events = prof.key_averages()
