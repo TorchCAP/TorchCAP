@@ -1,5 +1,6 @@
 from typing import Optional, Sequence, cast
 from itertools import product
+import itertools
 
 import torch
 from torch.utils._pytree import tree_map_only
@@ -13,6 +14,8 @@ from torch.distributed.tensor import (
 )
 from torch.distributed.tensor._op_schema import (
     OpStrategy,
+    TupleStrategy,
+    StrategyType,
     PlacementStrategy,
     PlacementList,
     Placement,
@@ -20,13 +23,9 @@ from torch.distributed.tensor._op_schema import (
 )
 from torch.distributed.tensor._dtensor_spec import TensorMeta, DTensorSpec
 from torch.distributed.tensor._op_schema import OpSchema
-from torch.distributed.tensor._ops.utils import register_op_strategy, RuntimeSchemaInfo
-from torch.distributed.tensor._ops._matrix_ops import (
-    gen_einsum_strategies,
-    infer_broadcast_dims_map,
-    map_placements_after_broadcast,
-    is_tensor_shardable,
-    generate_redistribute_costs,
+from torch.distributed.tensor._ops.utils import (
+    register_op_strategy,
+    RuntimeSchemaInfo,
     expand_to_full_mesh_op_strategy,
 )
 
@@ -42,19 +41,26 @@ def linear_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
     input_shape = op_schema.args_schema[0].shape
     num_input_dims = len(input_shape)
 
+    num_args = len(op_schema.args_schema)
+    assert num_args == 3 or num_args == 2, f"num_args: {num_args}"
+
     # placement list stores placements of [output, input, weight, bias]
     single_mesh_dim_strategies: list[PlacementList] = []
 
     # all replicated
-    all_replicate: PlacementList = [Replicate()] * 4
+    all_replicate: PlacementList = [Replicate()] * (num_args + 1)
     single_mesh_dim_strategies.append(all_replicate)
 
     # colwise parallel
-    colwise_parallel: PlacementList = [Shard(num_input_dims-1), Replicate(), Shard(0), Shard(0)]
+    colwise_parallel: PlacementList = [Shard(num_input_dims-1), Replicate(), Shard(0)]
+    if num_args == 3:
+        colwise_parallel.append(Shard(0))
     single_mesh_dim_strategies.append(colwise_parallel)
 
     # rowwise parallel
-    rowwise_parallel: PlacementList = [Partial(), Shard(num_input_dims-1), Shard(1), Replicate()]
+    rowwise_parallel: PlacementList = [Partial(), Shard(num_input_dims-1), Shard(1)]
+    if num_args == 3:
+        rowwise_parallel.append(Replicate())
     single_mesh_dim_strategies.append(rowwise_parallel)
 
     return expand_to_full_mesh_op_strategy(
@@ -273,7 +279,21 @@ def get_sharding_strategies(node: Node, mesh: DeviceMesh) -> OpStrategy:
         # mesh = try_find_mesh_from_args(op_schema.op, op_schema.args_schema)
         # swap the args spec with args strategies
         # args_op_strategy = [spec_to_strategy(i) for i in op_schema.args_schema]
-        args_op_strategy = tree_map_only(Node, lambda x: x.meta["op_strategy"], node.args)
+        def get_op_strategy(arg: object) -> OpStrategy:
+            if isinstance(arg, Node):
+                return arg.meta["op_strategy"]
+            elif (
+                isinstance(arg, (tuple, list))
+                and len(arg) > 0
+                and isinstance(arg[0], Node)
+            ):
+                tuple_strategy = [get_op_strategy(a) for a in arg]
+                tuple_strategy = cast(Sequence[StrategyType], tuple_strategy)
+                return TupleStrategy(tuple_strategy)
+            else:
+                return arg
+
+        args_op_strategy = [get_op_strategy(a) for a in node.args]
 
         # kwargs_op_strategy = {
         #     k: spec_to_strategy(v) for k, v in op_schema.kwargs_schema.items()

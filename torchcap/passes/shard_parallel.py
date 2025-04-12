@@ -35,8 +35,8 @@ __all__ = ["tensor_parallel_transformation"]
 
 def tensor_parallel_transformation(
     program: ExportedProgram,
-    device_mesh: DeviceMesh,
-    parallel_strategies: dict[str, ParallelStyle],
+    mesh_topo: MeshTopology,
+    parallel_plan: ParallelPlan,
 ) -> ExportedProgram:
     """
     The entry point function to perform graph transformations on an exported program
@@ -52,10 +52,10 @@ def tensor_parallel_transformation(
 
     with gm._set_replace_hook(sig.get_replace_hook()):
         res = _TensorParallelTransformPass(
-            device_mesh,
+            mesh_topo,
             state_dict,
             program.graph_signature,
-            parallel_strategies,
+            parallel_plan,
         )(gm)
         assert res is not None
         gm = res.graph_module
@@ -72,23 +72,23 @@ class _TensorParallelTransformPass(PassBase):
 
     def __init__(
         self,
-        device_mesh: DeviceMesh,
+        mesh_topo: MeshTopology,
         state_dict: dict[str, torch.Tensor],
         graph_signature: ExportGraphSignature,
-        parallel_strategies: dict[str, ParallelStyle],
+        parallel_plan: ParallelPlan,
     ) -> None:
         super().__init__()
         # self.mesh = DeviceMesh(mesh_topo.device_type, torch.arange(mesh_topo.world_size))
-        self.mesh = device_mesh
+        self.mesh = mesh_topo.get_device_mesh()
         self.state_dict: dict[str, torch.Tensor] = state_dict
         self.graph_signature = graph_signature
-        self.parallel_strategies = parallel_strategies
+        self.parallel_plan = parallel_plan
 
     def call(self, graph_module) -> PassResult:
         gm = copy.deepcopy(graph_module)
 
-        parameter_placements = _generate_parameter_and_buffer_placements(
-            list(self.state_dict.keys()), self.parallel_strategies
+        parameter_placements = _extract_parameter_and_buffer_placements(
+            self.graph_signature, self.parallel_plan.node_strategies
         )
         placement_strategies = _mark_sharding(
             gm, self.graph_signature, self.mesh, parameter_placements
@@ -210,7 +210,6 @@ def _mark_sharding(
                 )
             node.meta["sharding"] = placement_strategies[node]
         elif node.op == "get_attr":
-            node.meta["val"] = torch.empty((1,), dtype=torch.float32)
             if node not in placement_strategies:
                 placement_strategies[node] = _create_placement_strategy(
                     node, mesh, placements=(Replicate(),)
@@ -247,8 +246,7 @@ def _mark_sharding(
                         op_schema,
                     )
                 else:
-                    # The cached version may cause error, so I changed it to the non-cached version
-                    output_sharding = DTensor._op_dispatcher.sharding_propagator.propagate_op_sharding_non_cached(  # type: ignore[assignment]
+                    output_sharding = DTensor._op_dispatcher.sharding_propagator.propagate_op_sharding(  # type: ignore[assignment]
                         op_schema,
                     )
                 placement_strategies[node] = PlacementStrategy(
@@ -379,11 +377,6 @@ def _partitioner(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
             local_val = _partition_val(node.meta["val"], out_spec)
             # update node value
             node.meta["val"] = local_val
-        elif node.op == "get_attr":
-            out_spec = node_sharding.output_spec
-            local_val = _partition_val(node.meta["val"], out_spec)
-            # update node value
-            node.meta["val"] = local_val
         elif node.op == "call_function":
             out_spec = node_sharding.output_spec
             # check if there's misaligned sharding, insert reshard if there is
@@ -417,7 +410,7 @@ def _partitioner(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
                     if arg_spec != desired_spec:
                         _insert_reshard_gm(gm, node, arg, arg_spec, desired_spec)
         else:
-            raise RuntimeError(f"Node {node} not supported")
+            raise RuntimeError(f"op code {node} not supported")
 
     _clean_up_graph_metadata(gm)
     gm.graph.lint()
@@ -558,9 +551,6 @@ def _shard_state_dict(
             fqn = graph_signature.inputs_to_parameters[node.name]
         elif node.name in graph_signature.inputs_to_buffers:
             fqn = graph_signature.inputs_to_buffers[node.name]
-            if fqn in graph_signature.non_persistent_buffers:
-                # ignore non-persistent buffers
-                continue
         else:
             continue
         assert fqn in state_dict, f"{fqn} not found in state dict: {state_dict.keys()}"

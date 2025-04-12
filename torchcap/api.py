@@ -57,14 +57,20 @@ def optimize(
     logger.info("Optimizing model...")
     # for n, p in program.state_dict.items():
     #     print(n, p.shape)
-    program = export(model, example_args, example_kwargs)
-
-    parallel_plan = solver.solve_auto_sharding(
-        program, mesh_topo, config.cluster_env.get_device_memory_capacity_bytes(), parallel_strategies
+    program = export(
+        model, example_args, example_kwargs
     )
+    program.graph_module.print_readable()
+    program.graph.print_tabular()
+
+    # parallel_plan = solver.solve_auto_sharding(
+    #     program, mesh_topo, config.cluster_env.get_device_memory_capacity_bytes(), parallel_strategies
+    # )
 
     program = tensor_parallel_transformation(
-        program, mesh_topo, parallel_plan
+        program,
+        mesh_topo.get_device_mesh(),
+        parallel_strategies,
     )
     return program.module()
 

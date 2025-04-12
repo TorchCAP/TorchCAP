@@ -1,10 +1,11 @@
-from typing import Callable, Any
+from typing import Callable, Any, Sequence
 from numpy.typing import NDArray
 import operator
 import numpy as np
 import math
 import os
 from functools import reduce
+from datetime import timedelta
 
 import torch
 from torch.fx import Node, map_arg
@@ -22,6 +23,7 @@ from torch.distributed.tensor._op_schema import (
 from torch.fx.immutable_collections import immutable_dict, immutable_list 
 import torch.utils._pytree as pytree
 from torch.distributed.tensor.parallel.style import ParallelStyle, ColwiseParallel, Shard
+from torch.distributed import DeviceMesh
 
 from torchcap.cluster_env import MeshTopology
 from torchcap.passes.utils import ParallelPlan
@@ -48,6 +50,23 @@ _PYTORCH_MIN_ALLOCATE = (
     2**9 if int(os.environ.get("PYTORCH_NO_CUDA_MEMORY_CACHING", 0)) == 0 else 1
 )
 
+
+def get_output_spec_from_strategy(
+    strategy: PlacementStrategy,
+) -> DTensorSpec:
+    """
+    Util function to extract output spec from op strategy.
+    """
+    if isinstance(strategy.output_specs, DTensorSpec):
+        return strategy.output_specs
+    else:
+        # For ops that return multiple outputs, the outputs should have the same output spec
+        assert isinstance(strategy.output_specs, Sequence)
+        assert strategy.output_specs[0] is not None
+        strategy.output_specs[0].tensor_meta = None
+        return strategy.output_specs[0]
+
+
 def get_input_node_specs(
     node: Node, strategy: PlacementStrategy
 ) -> tuple[DTensorSpec, ...]:
@@ -56,7 +75,7 @@ def get_input_node_specs(
     """
     input_specs_list: list[DTensorSpec] = []
     for input_arg in node.all_input_nodes:
-        output_spec = strategy.output_specs
+        output_spec = get_output_spec_from_strategy(strategy)
         assert isinstance(output_spec, DTensorSpec)
         input_specs_list.append(output_spec)
     return tuple(input_specs_list)
@@ -120,11 +139,26 @@ def analyze_sharding(
                 op_strategies[node] = OpStrategy([
                     _create_placement_strategy(
                         node, mesh,
-                        placements=strt.output_spec.placements,
+                        placements=get_output_spec_from_strategy(strt).placements,
                         input_specs=get_input_node_specs(node, strt),
                     )
                     for strt in arg_strategy.strategies
                 ])
+                node.meta["op_strategy"] = op_strategies[node]
+            elif isinstance(node.target, torch._ops.HigherOrderOperator):
+                # bypass higher order operators
+                input_nodes = node.all_input_nodes
+                arg_strategy = op_strategies[input_nodes[0]]
+                strategy = PlacementStrategy(
+                    input_specs=get_input_node_specs(node, arg_strategy.strategies[0]),
+                    output_specs=DTensorSpec(mesh, (Replicate(),)),
+                )
+                strategy.output_specs.tensor_meta = TensorMeta(
+                    shape=node.all_input_nodes[0].meta["val"].shape,
+                    stride=node.all_input_nodes[0].meta["val"].stride(),
+                    dtype=node.all_input_nodes[0].meta["val"].dtype,
+                )
+                op_strategies[node] = OpStrategy([strategy])
                 node.meta["op_strategy"] = op_strategies[node]
             else:
                 if (
@@ -139,6 +173,13 @@ def analyze_sharding(
                 node.meta["op_strategy"] = op_strategies[node]
         elif node.op == "output":
             node.meta["op_strategy"] = None
+        elif node.op == "get_attr":
+            node.meta["val"] = torch.empty((1,), dtype=torch.float32)
+            op_strategies[node] = OpStrategy([
+                _create_placement_strategy(
+                    node, mesh, placements=(Replicate(),))
+            ])
+            node.meta["op_strategy"] = op_strategies[node]
         else:
             raise RuntimeError(f"op code {node.op} not supported")
 
@@ -170,7 +211,7 @@ class CostGraph:
             for input_idx, input_node in enumerate(node.all_input_nodes):
                 src_op_strategy = op_strategies[input_node]
                 src_specs = [
-                    strategy.output_spec
+                    get_output_spec_from_strategy(strategy)
                     for strategy in src_op_strategy.strategies
                 ]
 
@@ -332,7 +373,8 @@ def solve_auto_sharding(
         # print(f"[DEBUG] {i}: {m_deltas[i]}")
 
     # [Constraint] Peak memory constraint
-    # model.add_linear_constraint(m[i] <= M)
+    for i in range(len(m)):
+        model.add_linear_constraint(m[i] <= max_device_memory)
 
     # [Objective] Minimize the total resharding cost
     model.minimize(total_reshard_cost)
@@ -354,17 +396,17 @@ def solve_auto_sharding(
     #     if v == 1:
     #         print(f"[DEBUG] hint: {h} {v}")
 
-    params = mathopt.SolveParameters(enable_output=True)
-    result = mathopt.solve(model, mathopt.SolverType.HIGHS, params=params)
+    params = mathopt.SolveParameters(enable_output=True, time_limit=timedelta(minutes=1))
+    result = mathopt.solve(model, mathopt.SolverType.HIGHS, params=params, model_params=model_params)
 
-    if result.termination.reason != mathopt.TerminationReason.OPTIMAL:
+    if result.termination.reason not in [mathopt.TerminationReason.OPTIMAL, mathopt.TerminationReason.FEASIBLE]:
         raise RuntimeError(f"Failed to solve the model ({result.termination})")
 
     print("Found optimal solution")
     print("Objective value:", result.objective_value())
 
     m_peak = max([result.variable_values()[m[i]] for i in range(len(m))])
-    print(f"Peak memory (GB): {m_peak / 2**30} (max_device_memory: {max_device_memory / 2**30} GB)")
+    print(f"Peak memory (GB): {m_peak} (max_device_memory: {max_device_memory} GB)")
 
     # for i, delta in enumerate(m_deltas):
     #     print(f"[DEBUG] {i} {delta} = {mathopt.evaluate_expression(delta, result.variable_values())}")
